@@ -1,0 +1,194 @@
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))() -- Load Rayfield (update URL if needed)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local LockOnRange = 500 -- Maximum distance to lock onto a plane (in studs)
+local HighlightColorFriendly = Color3.fromRGB(0, 255, 0) -- Green for friendly planes
+local HighlightColorEnemy = Color3.fromRGB(255, 0, 0) -- Red for enemy planes
+
+-- Create ScreenGui for lock-on crosshair
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LockOnCrosshair"
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local crosshair = Instance.new("Frame")
+crosshair.Size = UDim2.new(0, 30, 0, 30)
+crosshair.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+crosshair.BackgroundTransparency = 0.5
+crosshair.BorderSizePixel = 2
+crosshair.BorderColor3 = Color3.fromRGB(255, 255, 255)
+crosshair.Visible = false
+crosshair.Parent = screenGui
+
+-- Create Rayfield window
+local Window = Rayfield:CreateWindow({
+    Name = "Wings of Glory Helper",
+    LoadingTitle = "Loading Interface",
+    LoadingSubtitle = "by xAI",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "WingsOfGloryHelper",
+        FileName = "Config"
+    }
+})
+
+-- Function to check if a model is a plane
+local function isPlane(model)
+    return model:IsA("Model") and model:FindFirstChildWhichIsA("VehicleSeat") -- Adjust if needed
+end
+
+-- Function to check if a plane is friendly
+local function isFriendly(model)
+    -- Placeholder: Check if plane is on the player's team
+    local pilot = Players:GetPlayerFromCharacter(model) -- Hypothetical pilot check
+    if pilot and pilot.Team == LocalPlayer.Team then
+        return true
+    end
+    return false -- Default to enemy if no pilot or team info
+end
+
+-- Function to create or update a SelectionBox
+local function createSelectionBox(model, isFriendly)
+    local existingBox = model:FindFirstChild("PlaneSelectionBox")
+    if existingBox then
+        existingBox.Color3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
+        return existingBox
+    end
+    
+    local selectionBox = Instance.new("SelectionBox")
+    selectionBox.Name = "PlaneSelectionBox"
+    selectionBox.Adornee = model
+    selectionBox.LineThickness = 0.05
+    selectionBox.SurfaceColor3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
+    selectionBox.SurfaceTransparency = 0.5
+    selectionBox.Color3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
+    selectionBox.Transparency = 0
+    selectionBox.Parent = model
+    print("Created SelectionBox for", model.Name, "Friendly:", isFriendly)
+    return selectionBox
+end
+
+-- Function to clear all SelectionBoxes
+local function clearSelectionBoxes()
+    for _, model in pairs(workspace:GetDescendants()) do
+        if model:FindFirstChild("PlaneSelectionBox") then
+            model.PlaneSelectionBox:Destroy()
+            print("Cleared SelectionBox from", model.Name)
+        end
+    end
+end
+
+-- Function to find the closest enemy plane
+local function findClosestEnemyPlane()
+    local closestPlane = nil
+    local closestDistance = LockOnRange
+    local playerPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position or Camera.CFrame.Position
+    
+    for _, model in pairs(workspace:GetChildren()) do
+        if isPlane(model) and model.PrimaryPart and not isFriendly(model) then
+            local distance = (model.PrimaryPart.Position - playerPos).Magnitude
+            if distance < closestDistance then
+                closestDistance = distance
+                closestPlane = model
+                print("Found enemy plane:", model.Name, "at distance:", distance)
+            end
+        end
+    end
+    
+    return closestPlane
+end
+
+-- Highlight all planes
+local function highlightAllPlanes(enabled)
+    if not enabled then
+        clearSelectionBoxes()
+        return
+    end
+    
+    for _, model in pairs(workspace:GetChildren()) do
+        if isPlane(model) then
+            createSelectionBox(model, isFriendly(model))
+        end
+    end
+end
+
+-- Lock-on state
+local isLockedOn = false
+local currentTarget = nil
+
+-- Rayfield Tab
+local Tab = Window:CreateTab("Main", 4483362458) -- Icon ID for a plane
+
+-- Toggle for highlighting planes
+local HighlightToggle = Tab:CreateToggle({
+    Name = "Highlight Planes",
+    CurrentValue = false,
+    Flag = "HighlightToggle",
+    Callback = function(Value)
+        highlightAllPlanes(Value)
+        print("Highlight Planes toggled:", Value)
+    end
+})
+
+-- Button for locking onto closest enemy
+local LockOnButton = Tab:CreateButton({
+    Name = "Lock Onto Closest Enemy",
+    Callback = function()
+        print("Lock-on button pressed")
+        if isLockedOn then
+            crosshair.Visible = false
+            isLockedOn = false
+            currentTarget = nil
+            print("Unlocked")
+        else
+            local target = findClosestEnemyPlane()
+            if target then
+                crosshair.Visible = true
+                isLockedOn = true
+                currentTarget = target
+                print("Locked onto", target.Name)
+            else
+                print("No enemy plane found within range")
+            end
+        end
+    end
+})
+
+-- Update lock-on position
+RunService.RenderStepped:Connect(function()
+    if isLockedOn and currentTarget and currentTarget.Parent and currentTarget.PrimaryPart then
+        local worldPos = currentTarget.PrimaryPart.Position
+        local vector, onScreen = Camera:WorldToViewportPoint(worldPos)
+        
+        if onScreen then
+            crosshair.Position = UDim2.new(0, vector.X - crosshair.Size.X.Offset / 2, 0, vector.Y - crosshair.Size.Y.Offset / 2)
+            crosshair.Visible = true
+        else
+            crosshair.Visible = false
+        end
+        
+        local playerPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position or Camera.CFrame.Position
+        if (worldPos - playerPos).Magnitude > LockOnRange then
+            crosshair.Visible = false
+            isLockedOn = false
+            currentTarget = nil
+            print("Lock-on target lost (out of range)")
+        end
+    else
+        crosshair.Visible = false
+        isLockedOn = false
+        currentTarget = nil
+    end
+end)
+
+-- Clean up on player leave
+LocalPlayer.AncestorRemoved:Connect(function()
+    crosshair.Visible = false
+    clearSelectionBoxes()
+    screenGui:Destroy()
+    Rayfield:Destroy()
+    print("Cleaned up GUI and SelectionBoxes")
+end)
