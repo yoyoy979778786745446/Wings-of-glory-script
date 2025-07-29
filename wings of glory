@@ -1,194 +1,331 @@
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))() -- Load Rayfield (update URL if needed)
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
-local LockOnRange = 500 -- Maximum distance to lock onto a plane (in studs)
-local HighlightColorFriendly = Color3.fromRGB(0, 255, 0) -- Green for friendly planes
-local HighlightColorEnemy = Color3.fromRGB(255, 0, 0) -- Red for enemy planes
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Create ScreenGui for lock-on crosshair
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "LockOnCrosshair"
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-screenGui.ResetOnSpawn = false
-
-local crosshair = Instance.new("Frame")
-crosshair.Size = UDim2.new(0, 30, 0, 30)
-crosshair.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-crosshair.BackgroundTransparency = 0.5
-crosshair.BorderSizePixel = 2
-crosshair.BorderColor3 = Color3.fromRGB(255, 255, 255)
-crosshair.Visible = false
-crosshair.Parent = screenGui
-
--- Create Rayfield window
+-- Create Rayfield Window
 local Window = Rayfield:CreateWindow({
-    Name = "Wings of Glory Helper",
-    LoadingTitle = "Loading Interface",
+    Name = "Ink Game GUI",
+    LoadingTitle = "Ink Game Script",
     LoadingSubtitle = "by xAI",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "WingsOfGloryHelper",
+        FolderName = "InkGameConfig",
         FileName = "Config"
     }
 })
 
--- Function to check if a model is a plane
-local function isPlane(model)
-    return model:IsA("Model") and model:FindFirstChildWhichIsA("VehicleSeat") -- Adjust if needed
-end
+-- General Tab
+local GeneralTab = Window:CreateTab("General", nil)
 
--- Function to check if a plane is friendly
-local function isFriendly(model)
-    -- Placeholder: Check if plane is on the player's team
-    local pilot = Players:GetPlayerFromCharacter(model) -- Hypothetical pilot check
-    if pilot and pilot.Team == LocalPlayer.Team then
-        return true
-    end
-    return false -- Default to enemy if no pilot or team info
-end
-
--- Function to create or update a SelectionBox
-local function createSelectionBox(model, isFriendly)
-    local existingBox = model:FindFirstChild("PlaneSelectionBox")
-    if existingBox then
-        existingBox.Color3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
-        return existingBox
-    end
-    
-    local selectionBox = Instance.new("SelectionBox")
-    selectionBox.Name = "PlaneSelectionBox"
-    selectionBox.Adornee = model
-    selectionBox.LineThickness = 0.05
-    selectionBox.SurfaceColor3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
-    selectionBox.SurfaceTransparency = 0.5
-    selectionBox.Color3 = isFriendly and HighlightColorFriendly or HighlightColorEnemy
-    selectionBox.Transparency = 0
-    selectionBox.Parent = model
-    print("Created SelectionBox for", model.Name, "Friendly:", isFriendly)
-    return selectionBox
-end
-
--- Function to clear all SelectionBoxes
-local function clearSelectionBoxes()
-    for _, model in pairs(workspace:GetDescendants()) do
-        if model:FindFirstChild("PlaneSelectionBox") then
-            model.PlaneSelectionBox:Destroy()
-            print("Cleared SelectionBox from", model.Name)
+-- God Mode
+local godModeEnabled = false
+local function enableGodMode()
+    if LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.MaxHealth = math.huge
+            humanoid.Health = math.huge
+            humanoid.HealthChanged:Connect(function()
+                if godModeEnabled then
+                    humanoid.Health = math.huge
+                end
+            end)
         end
     end
 end
 
--- Function to find the closest enemy plane
-local function findClosestEnemyPlane()
-    local closestPlane = nil
-    local closestDistance = LockOnRange
-    local playerPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position or Camera.CFrame.Position
-    
-    for _, model in pairs(workspace:GetChildren()) do
-        if isPlane(model) and model.PrimaryPart and not isFriendly(model) then
-            local distance = (model.PrimaryPart.Position - playerPos).Magnitude
-            if distance < closestDistance then
-                closestDistance = distance
-                closestPlane = model
-                print("Found enemy plane:", model.Name, "at distance:", distance)
-            end
-        end
-    end
-    
-    return closestPlane
-end
-
--- Highlight all planes
-local function highlightAllPlanes(enabled)
-    if not enabled then
-        clearSelectionBoxes()
-        return
-    end
-    
-    for _, model in pairs(workspace:GetChildren()) do
-        if isPlane(model) then
-            createSelectionBox(model, isFriendly(model))
-        end
-    end
-end
-
--- Lock-on state
-local isLockedOn = false
-local currentTarget = nil
-
--- Rayfield Tab
-local Tab = Window:CreateTab("Main", 4483362458) -- Icon ID for a plane
-
--- Toggle for highlighting planes
-local HighlightToggle = Tab:CreateToggle({
-    Name = "Highlight Planes",
+GeneralTab:CreateToggle({
+    Name = "God Mode",
     CurrentValue = false,
-    Flag = "HighlightToggle",
     Callback = function(Value)
-        highlightAllPlanes(Value)
-        print("Highlight Planes toggled:", Value)
+        godModeEnabled = Value
+        if Value then
+            enableGodMode()
+        end
     end
 })
 
--- Button for locking onto closest enemy
-local LockOnButton = Tab:CreateButton({
-    Name = "Lock Onto Closest Enemy",
-    Callback = function()
-        print("Lock-on button pressed")
-        if isLockedOn then
-            crosshair.Visible = false
-            isLockedOn = false
-            currentTarget = nil
-            print("Unlocked")
+-- Infinite Stamina
+local staminaEnabled = false
+local function enableInfiniteStamina()
+    if LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:SetAttribute("Stamina", math.huge)
+            humanoid:GetAttributeChangedSignal("Stamina"):Connect(function()
+                if staminaEnabled then
+                    humanoid:SetAttribute("Stamina", math.huge)
+                end
+            end)
+        end
+    end
+end
+
+GeneralTab:CreateToggle({
+    Name = "Infinite Stamina",
+    CurrentValue = false,
+    Callback = function(Value)
+        staminaEnabled = Value
+        if Value then
+            enableInfiniteStamina()
+        end
+    end
+})
+
+-- Speed Slider
+local speed = 16
+local function setSpeed(newSpeed)
+    if LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = newSpeed
+        end
+    end
+end
+
+GeneralTab:CreateSlider({
+    Name = "Player Speed",
+    Range = {16, 100},
+    Increment = 1,
+    CurrentValue = 16,
+    Callback = function(Value)
+        speed = Value
+        setSpeed(speed)
+    end
+})
+
+-- ESP Function
+local espEnabled = false
+local function createESP(object, color)
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = color
+    highlight.OutlineColor = color
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Adornee = object
+    highlight.Parent = object
+    return highlight
+end
+
+local function setupESP()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name:lower():match("door") then
+            createESP(obj, Color3.new(1, 0, 0)) -- Red for doors
+        elseif obj.Name:lower():match("exit") then
+            createESP(obj, Color3.new(0, 1, 0)) -- Green for exits
+        elseif obj.Name:lower():match("stair") then
+            createESP(obj, Color3.new(0, 0, 1)) -- Blue for stairs
+        end
+    end
+end
+
+GeneralTab:CreateToggle({
+    Name = "Door/Exit/Staircase ESP",
+    CurrentValue = false,
+    Callback = function(Value)
+        espEnabled = Value
+        if Value then
+            setupESP()
         else
-            local target = findClosestEnemyPlane()
-            if target then
-                crosshair.Visible = true
-                isLockedOn = true
-                currentTarget = target
-                print("Locked onto", target.Name)
-            else
-                print("No enemy plane found within range")
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:FindFirstChildOfClass("Highlight") then
+                    obj:FindFirstChildOfClass("Highlight"):Destroy()
+                end
             end
         end
     end
 })
 
--- Update lock-on position
-RunService.RenderStepped:Connect(function()
-    if isLockedOn and currentTarget and currentTarget.Parent and currentTarget.PrimaryPart then
-        local worldPos = currentTarget.PrimaryPart.Position
-        local vector, onScreen = Camera:WorldToViewportPoint(worldPos)
-        
-        if onScreen then
-            crosshair.Position = UDim2.new(0, vector.X - crosshair.Size.X.Offset / 2, 0, vector.Y - crosshair.Size.Y.Offset / 2)
-            crosshair.Visible = true
-        else
-            crosshair.Visible = false
+-- Red Light, Green Light Tab
+local RLGLTab = Window:CreateTab("Red Light, Green Light", nil)
+local autoStopEnabled = false
+local function redLightGreenLight()
+    local isRedLight = false -- Placeholder: Detect game state
+    RunService.RenderStepped:Connect(function()
+        if autoStopEnabled and LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if isRedLight then
+                humanoid.WalkSpeed = 0
+            else
+                setSpeed(speed)
+            end
         end
-        
-        local playerPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position or Camera.CFrame.Position
-        if (worldPos - playerPos).Magnitude > LockOnRange then
-            crosshair.Visible = false
-            isLockedOn = false
-            currentTarget = nil
-            print("Lock-on target lost (out of range)")
+    end)
+end
+
+RLGLTab:CreateToggle({
+    Name = "Auto-Stop",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoStopEnabled = Value
+        if Value then
+            redLightGreenLight()
         end
-    else
-        crosshair.Visible = false
-        isLockedOn = false
-        currentTarget = nil
     end
+})
+
+-- Tug of War Tab
+local TugTab = Window:CreateTab("Tug of War", nil)
+local autoPullEnabled = false
+local function autoPullTugOfWar()
+    while autoPullEnabled do
+        if ReplicatedStorage:FindFirstChild("PullEvent") then
+            ReplicatedStorage.PullEvent:FireServer()
+        end
+        wait(0.05)
+    end
+end
+
+TugTab:CreateToggle({
+    Name = "Auto-Pull",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoPullEnabled = Value
+        if Value then
+            coroutine.wrap(autoPullTugOfWar)()
+        end
+    end
+})
+
+-- Glass Bridge Tab
+local GlassTab = Window:CreateTab("Glass Bridge", nil)
+local glassVisionEnabled = false
+local function glassVision()
+    for _, part in pairs(workspace:GetDescendants()) do
+        if part.Name:match("Glass") or part.Name:match("Tile") then
+            part.Transparency = glassVisionEnabled and 0.5 or 0
+            if glassVisionEnabled then
+                createESP(part, Color3.new(0, 1, 0))
+            else
+                if part:FindFirstChildOfClass("Highlight") then
+                    part:FindFirstChildOfClass("Highlight"):Destroy()
+                end
+            end
+        end
+    end
+end
+
+GlassTab:CreateToggle({
+    Name = "Glass Vision",
+    CurrentValue = false,
+    Callback = function(Value)
+        glassVisionEnabled = Value
+        glassVision()
+    end
+})
+
+GlassTab:CreateButton({
+    Name = "Teleport to End",
+    Callback = function()
+        if LocalPlayer.Character then
+            local endPart = workspace:FindFirstChild("GlassBridgeEnd")
+            if endPart then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = endPart.CFrame + Vector3.new(0, 5, 0)
+            else
+                Rayfield:Notify({
+                    Title = "Error",
+                    Content = "GlassBridgeEnd not found!",
+                    Duration = 3
+                })
+            end
+        end
+    end
+})
+
+-- Mingle Tab
+local MingleTab = Window:CreateTab("Mingle", nil)
+local autoChokeEnabled = false
+local function autoChokeMingle()
+    while autoChokeEnabled do
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                if ReplicatedStorage:FindFirstChild("ChokeEvent") then
+                    ReplicatedStorage.ChokeEvent:FireServer(player.Character.HumanoidRootPart)
+                end
+            end
+        end
+        wait(0.3)
+    end
+end
+
+MingleTab:CreateToggle({
+    Name = "Auto-Choke",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoChokeEnabled = Value
+        if Value then
+            coroutine.wrap(autoChokeMingle)()
+        end
+    end
+})
+
+-- Jump Rope Tab
+local JumpRopeTab = Window:CreateTab("Jump Rope", nil)
+local autoJumpEnabled = false
+local function autoJumpRope()
+    while autoJumpEnabled do
+        if workspace:FindFirstChild("JumpRope") and LocalPlayer.Character then
+            LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+        wait(0.1) -- Adjust timing based on game
+    end
+end
+
+JumpRopeTab:CreateToggle({
+    Name = "Auto-Jump",
+    CurrentValue = false,
+    Callback = function(Value)
+        autoJumpEnabled = Value
+        if Value then
+            coroutine.wrap(autoJumpRope)()
+        end
+    end
+})
+
+-- Powers Tab
+local PowersTab = Window:CreateTab("Powers", nil)
+PowersTab:CreateButton({
+    Name = "Enable Free Powers",
+    Callback = function()
+        if ReplicatedStorage:FindFirstChild("UnlockPower") then
+            ReplicatedStorage.UnlockPower:FireServer("Dash")
+            Rayfield:Notify({
+                Title = "Powers",
+                Content = "Attempted to unlock Dash power!",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "UnlockPower event not found!",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- Initialize on Character Spawn
+LocalPlayer.CharacterAdded:Connect(function(character)
+    if godModeEnabled then enableGodMode() end
+    if staminaEnabled then enableInfiniteStamina() end
+    setSpeed(speed)
+    if espEnabled then setupESP() end
+    if glassVisionEnabled then glassVision() end
 end)
 
--- Clean up on player leave
-LocalPlayer.AncestorRemoved:Connect(function()
-    crosshair.Visible = false
-    clearSelectionBoxes()
-    screenGui:Destroy()
-    Rayfield:Destroy()
-    print("Cleaned up GUI and SelectionBoxes")
-end)
+-- Initialize if Character Exists
+if LocalPlayer.Character then
+    if godModeEnabled then enableGodMode() end
+    if staminaEnabled then enableInfiniteStamina() end
+    setSpeed(speed)
+    if espEnabled then setupESP() end
+    if glassVisionEnabled then glassVision() end
+end
+
+Rayfield:Notify({
+    Title = "Script Loaded",
+    Content = "Ink Game GUI loaded successfully!",
+    Duration = 5
+})
