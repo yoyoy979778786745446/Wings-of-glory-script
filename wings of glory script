@@ -1,0 +1,286 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Plane Lock-On System",
+    LoadingTitle = "Plane Lock-On Interface",
+    LoadingSubtitle = "Made by Ayoung",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "PlaneLockOnConfig",
+        FileName = "Config"
+    }
+})
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local HighlightFolder = Instance.new("Folder", workspace)
+HighlightFolder.Name = "PlaneHighlights"
+
+-- Configuration
+local HIGHLIGHT_ALLY_COLOR = Color3.fromRGB(0, 255, 0) -- Green for allies
+local HIGHLIGHT_ENEMY_COLOR = Color3.fromRGB(255, 0, 0) -- Red for enemies
+local LOCKON_RANGE = 500 -- Studs
+local LOCKON_INDICATOR_COLOR = Color3.fromRGB(255, 0, 0) -- Red for lock-on
+local HIGHLIGHTS_ENABLED = true -- Toggle for highlights
+
+-- Lock-on variables
+local lockedTarget = nil
+local lockOnIndicator = nil
+
+-- Create ScreenGui for lock-on indicator
+local function createLockOnIndicator()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Parent = LocalPlayer.PlayerGui
+    screenGui.Name = "LockOnGui"
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 50, 0, 50)
+    frame.BackgroundColor3 = LOCKON_INDICATOR_COLOR
+    frame.BackgroundTransparency = 0.5
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    frame.Parent = screenGui
+    
+    return frame
+end
+
+-- Highlight a plane with the given color
+local function highlightPlane(plane, color)
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = color
+    highlight.OutlineColor = color
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = plane
+    highlight.Adornee = plane
+    highlight.Name = "PlaneHighlight"
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = HighlightFolder
+end
+
+-- Remove highlight from a plane
+local function removeHighlight(plane)
+    local highlight = HighlightFolder:FindFirstChild("PlaneHighlight", true)
+    if highlight and highlight.Adornee == plane then
+        highlight:Destroy()
+    end
+end
+
+-- Check if two players are on the same team
+local function isSameTeam(player1, player2)
+    if not player1 or not player2 then
+        return false
+    end
+    return player1.Team == player2.Team
+end
+
+-- Find a player's plane in the workspace
+local function findPlayerPlane(player)
+    for _, model in pairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model.Name == player.Name then
+            return model
+        end
+    end
+    return nil
+end
+
+-- Update highlights for all players' planes
+local function updateHighlights()
+    if not HIGHLIGHTS_ENABLED then
+        HighlightFolder:ClearAllChildren()
+        return
+    end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local plane = findPlayerPlane(player)
+            if plane then
+                local highlightColor = isSameTeam(LocalPlayer, player) and HIGHLIGHT_ALLY_COLOR or HIGHLIGHT_ENEMY_COLOR
+                highlightPlane(plane, highlightColor)
+            end
+        end
+    end
+end
+
+-- Handle lock-on functionality
+local function lockOnToPlane()
+    local mouse = LocalPlayer:GetMouse()
+    local ray = Camera:ScreenPointToRay(mouse.X, mouse.Y)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, HighlightFolder}
+    
+    local raycastResult = workspace:Raycast(ray.Origin, ray.Direction * LOCKON_RANGE, raycastParams)
+    if raycastResult and raycastResult.Instance then
+        local plane = raycastResult.Instance:FindFirstAncestorOfClass("Model")
+        if plane then
+            local targetPlayer = Players:GetPlayerByUserId(tonumber(plane.Name))
+            if targetPlayer and not isSameTeam(LocalPlayer, targetPlayer) then
+                lockedTarget = plane
+                if not lockOnIndicator then
+                    lockOnIndicator = createLockOnIndicator()
+                end
+                Rayfield:Notify({
+                    Title = "Lock-On",
+                    Content = "Locked onto " .. targetPlayer.Name .. "'s plane",
+                    Duration = 3,
+                    Image = 4483362458
+                })
+            else
+                lockedTarget = nil
+                if lockOnIndicator then
+                    lockOnIndicator.Parent:Destroy()
+                    lockOnIndicator = nil
+                end
+                Rayfield:Notify({
+                    Title = "Lock-On Failed",
+                    Content = "Cannot lock onto ally or invalid target",
+                    Duration = 3,
+                    Image = 4483362458
+                })
+            end
+        end
+    end
+end
+
+-- Update lock-on indicator position
+local function updateLockOnIndicator()
+    if lockedTarget and lockOnIndicator then
+        local primaryPart = lockedTarget.PrimaryPart or lockedTarget:FindFirstChildWhichIsA("BasePart")
+        if primaryPart then
+            local screenPos, onScreen = Camera:WorldToScreenPoint(primaryPart.Position)
+            if onScreen then
+                lockOnIndicator.Position = UDim2.new(0, screenPos.X - 25, 0, screenPos.Y - 25)
+                lockOnIndicator.Visible = true
+            else
+                lockOnIndicator.Visible = false
+            end
+        else
+            lockedTarget = nil
+            lockOnIndicator.Parent:Destroy()
+            lockOnIndicator = nil
+            Rayfield:Notify({
+                Title = "Lock-On Lost",
+                Content = "Target plane no longer valid",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    end
+end
+
+-- Rayfield UI Tabs and Controls
+local MainTab = Window:CreateTab("Main Controls", 4483362458)
+
+MainTab:CreateToggle({
+    Name = "Enable Highlights",
+    CurrentValue = true,
+    Flag = "HighlightsToggle",
+    Callback = function(Value)
+        HIGHLIGHTS_ENABLED = Value
+        if not Value then
+            HighlightFolder:ClearAllChildren()
+        end
+        updateHighlights()
+    end
+})
+
+MainTab:CreateSlider({
+    Name = "Lock-On Range",
+    Range = {100, 1000},
+    Increment = 50,
+    Suffix = "Studs",
+    CurrentValue = LOCKON_RANGE,
+    Flag = "LockOnRange",
+    Callback = function(Value)
+        LOCKON_RANGE = Value
+    end
+})
+
+MainTab:CreateColorPicker({
+    Name = "Ally Highlight Color",
+    Color = HIGHLIGHT_ALLY_COLOR,
+    Flag = "AllyColor",
+    Callback = function(Value)
+        HIGHLIGHT_ALLY_COLOR = Value
+        updateHighlights()
+    end
+})
+
+MainTab:CreateColorPicker({
+    Name = "Enemy Highlight Color",
+    Color = HIGHLIGHT_ENEMY_COLOR,
+    Flag = "EnemyColor",
+    Callback = function(Value)
+        HIGHLIGHT_ENEMY_COLOR = Value
+        updateHighlights()
+    end
+})
+
+MainTab:CreateColorPicker({
+    Name = "Lock-On Indicator Color",
+    Color = LOCKON_INDICATOR_COLOR,
+    Flag = "LockOnColor",
+    Callback = function(Value)
+        LOCKON_INDICATOR_COLOR = Value
+        if lockOnIndicator then
+            lockOnIndicator.BackgroundColor3 = Value
+        end
+    end
+})
+
+MainTab:CreateButton({
+    Name = "Manual Lock-On",
+    Callback = function()
+        lockOnToPlane()
+    end
+})
+
+MainTab:CreateButton({
+    Name = "Join Discord",
+    Callback = function()
+        Rayfield:Notify({
+            Title = "Discord",
+            Content = "Join the Discord server: https://discord.gg/3bf7xtyYwp",
+            Duration = 5,
+            Image = 4483362458
+        })
+        setclipboard("https://discord.gg/3bf7xtyYwp")
+    end
+})
+
+-- Handle player joining/leaving
+Players.PlayerAdded:Connect(function(player)
+    local plane = findPlayerPlane(player)
+    if plane then
+        local highlightColor = isSameTeam(LocalPlayer, player) and HIGHLIGHT_ALLY_COLOR or HIGHLIGHT_ENEMY_COLOR
+        highlightPlane(plane, highlightColor)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    local plane = findPlayerPlane(player)
+    if plane then
+        removeHighlight(plane)
+    end
+end)
+
+-- Handle mouse click for lock-on
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+        lockOnToPlane()
+    end
+end)
+
+-- Initial highlight update
+updateHighlights()
+
+-- Update highlights and lock-on indicator every frame
+RunService.RenderStepped:Connect(function()
+    updateHighlights()
+    updateLockOnIndicator()
+end)
